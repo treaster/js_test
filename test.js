@@ -1,11 +1,21 @@
 "use strict"
 
+const OK = 'ok';
+const FAILED = 'failed';
+const SKIPPED = 'skipped';
+
 export function render(renderer, results) {
     for (let result of results) {
-        if (result.isOk) {
-            renderer.ok(result.name);
-        } else {
-            renderer.error(result.name, result.exc);
+        switch (result.status) {
+            case OK:
+                renderer.ok(result.name);
+                break;
+            case FAILED:
+                renderer.error(result.name, result.exc);
+                break;
+            case SKIPPED:
+                renderer.skipped(result.name);
+                break;
         }
     }
 }
@@ -26,6 +36,10 @@ export class consoleRenderer {
 
     error(testName, exc) {
         console.error(`Test "${testName}": FAILED\n${exc.stack}`);
+    }
+
+    skipped(testName) {
+        console.log(`Test "${testName}": SKIPPED`);
     }
 };
 
@@ -54,46 +68,43 @@ export class mithrilRenderer {
     }
 
     ok(testName) {
-        this.table.append(mu('tr')
-            .style('backgroundColor', '#00ff00')
-            .append(mu('td')
-                .style('textAlign', 'left')
-                .style('verticalAlign', 'top')
-                .setText(testName))
-            .append(mu('td')
-                .style('textAlign', 'center')
-                .style('verticalAlign', 'top')
-                .setText('OK'))
-            .append(mu('td')
-                .style('textAlign', 'left')
-                .style('verticalAlign', 'top')
-                .style('whiteSpace', 'pre')
-                .setText('')));
+        this._row(testName, 'OK', '', '#00ff00');
     }
 
     error(testName, exc) {
+        this._row(testName, 'FAIL', exc.stack, '#ffaaaa');
+    }
+
+    skipped(testName) {
+        this._row(testName, 'SKIPPED', '', '');
+    }
+
+    _row(testName, statusText, message, hexColor) {
         this.table.append(mu('tr')
-            .style('backgroundColor', '#ffaaaa')
+            .style('backgroundColor', hexColor)
             .append(mu('td')
                 .style('textAlign', 'left')
                 .style('verticalAlign', 'top')
+                .click(evt => {
+                    m.route.set('/test', {runonly: testName}, {});
+                })
                 .setText(testName))
             .append(mu('td')
                 .style('textAlign', 'center')
                 .style('verticalAlign', 'top')
-                .setText('FAIL'))
+                .setText(statusText))
             .append(mu('td')
                 .style('textAlign', 'left')
                 .style('verticalAlign', 'top')
                 .style('whiteSpace', 'pre')
-                .setText(exc.stack)));
+                .setText(message)));
     }
 }
 
 export function TestInit(endpoint, routes) {
     routes[endpoint] = {
-        onmatch: function() {
-            let results = runTests();
+        onmatch: function(args, requestedPath, route) {
+            let results = runTests(args.runonly);
             return {
                 view: function() {
                     let renderer = new mithrilRenderer();
@@ -113,7 +124,7 @@ export function TestInit(endpoint, routes) {
 class T {
     constructor(testName) {
         this.name = testName;
-        this.isOk = true;
+        this.status = 'skipped';
         this.exc = null;
     }
 
@@ -128,19 +139,25 @@ export function addTest(testName, testFunc) {
     testCases.push([testName, testFunc]);
 }
 
-export function runTests(renderer) {
+export function runTests(testPattern) {
+    let r = new RegExp(testPattern);
     let results = [];
 
     for (let testCase of testCases) {
         let testName = testCase[0];
+
         let testFunc = testCase[1];
         let t = new T(testName);
-        try {
-            testFunc(t);
-            t.isOk = true;
-        } catch(exc) {
-            t.isOk = false;
-            t.exc = exc;
+        if (!r.test(testName)) {
+            t.status = SKIPPED;
+        } else {
+            try {
+                testFunc(t);
+                t.status = OK;
+            } catch(exc) {
+                t.status = FAILED;
+                t.exc = exc;
+            }
         }
 
         results.push(t);
