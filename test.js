@@ -4,122 +4,169 @@ const OK = 'ok';
 const FAILED = 'failed';
 const SKIPPED = 'skipped';
 
-export function render(renderer, results) {
-    for (let result of results) {
-        switch (result.status) {
-            case OK:
-                renderer.ok(result.name);
-                break;
-            case FAILED:
-                renderer.error(result.name, result.exc);
-                break;
-            case SKIPPED:
-                renderer.skipped(result.name);
-                break;
+// Run tests and render the results using the supplied renderer.
+// If ?run_tests is not defined in the URL and/or is not equal '1', do nothing.
+// If ?runonly=[regexp] is defined, run only tests matching the specified pattern.
+// TODO(treaster): wrap this in an object, parameterize the URL query names,
+// and remove global vars from this file.
+export function runTests(renderer) {
+    let params = new URL(window.location).searchParams;
+    if (params.get('run_tests') !== '1') {
+        return false;
+    }
+
+    let results = runTestsInternal(params.get('runonly') || '');
+    renderer.render(results);
+    return true;
+}
+
+export class Renderer {
+    constructor() {
+    }
+
+    render(results) {
+        let table = this.renderBoilerplate();
+        for (let result of results) {
+            switch (result.status) {
+                case OK:
+                    this.ok(table, result.name);
+                    break;
+                case FAILED:
+                    this.error(table, result.name, result.exc);
+                    break;
+                case SKIPPED:
+                    this.skipped(table, result.name);
+                    break;
+            }
         }
     }
+
+    ok(table, testName) {
+        this.renderOneTest(table, testName, 'OK', '', '#00ff00');
+    }
+
+    error(table, testName, exc) {
+        this.renderOneTest(table, testName, 'FAIL', exc.stack, '#ffaaaa');
+    }
+
+    skipped(table, testName) {
+        this.renderOneTest(table, testName, 'SKIPPED', '', '');
+    }
+
+    // subclasses must provide renderBoilerplate() and renderOneTest()
 }
 
-
-export function ConsoleRenderer() {
-    return new consoleRenderer();
-};
-
-// TODO(treaster): Remove all uses of this from outside this package, then unexport.
-export class consoleRenderer {
+export class ConsoleRenderer extends Renderer {
     constructor() {
+        super();
     }
 
-    ok(testName) {
-        console.log(`Test "${testName}": OK`);
+    renderBoilerplate() {
+        return null;
     }
 
-    error(testName, exc) {
-        console.error(`Test "${testName}": FAILED\n${exc.stack}`);
-    }
-
-    skipped(testName) {
-        console.log(`Test "${testName}": SKIPPED`);
+    renderOneTest(table, testName, status, stack, hexColor) {
+        let stackMsg = '';
+        if (stack !== '') {
+            stackMsg = `\n'${stack}`;
+        }
+        console.log(`Test "${testName}": ${status}${stackMsg}`);
     }
 };
 
-// TODO(treaster): Remove all uses of this from outside this package, then unexport.
-export class mithrilRenderer {
-    constructor() {
-        let table = mu('table')
-            .style('fontFamily', 'monospace')
-            .style('verticalAlign', 'top')
-            .style('borderCollapse', 'collapse')
-            .style('border', '1px solid black')
-            .append(mu('tr')
-                .append(mu('th')
-                    .style('width', '10em')
-                    .style('textAlign', 'left')
-                    .setText('Test Name'))
-                .append(mu('th')
-                    .style('width', '8em')
-                    .style('text-align', 'center')
-                    .setText('Outcome'))
-                .append(mu('th')
-                    .style('width', '20em')
-                    .style('textAlign', 'left')
-                    .setText('Message')));
-        this.table = table;
+export class DomRenderer extends Renderer {
+    constructor(parentElement) {
+        super();
+        this._parentElement = parentElement;
     }
 
-    ok(testName) {
-        this._row(testName, 'OK', '', '#00ff00');
+    renderBoilerplate() {
+        let table = domElement(
+            'table', 
+            {
+                fontFamily: 'monospace',
+                verticalAlign: 'top',
+                borderCollapse: 'collapse',
+                border: '1px solid black',
+            },
+            null);
+
+        let headerTr = domElement('tr', {}, null);
+
+        let testName = domElement(
+            'td', 
+            { width: '10em', textAlign: 'left', },
+            'Test Name');
+        headerTr.append(testName);
+
+        let outcome = domElement(
+            'td',
+            { width: '8em', textAlign: 'center', },
+            'Outcome');
+        headerTr.append(outcome);
+
+        let message = domElement(
+            'td',
+            { width: '20em', textAlign: 'left', },
+            'Message');
+        headerTr.append(message);
+
+        table.append(headerTr);
+
+        this._parentElement.append(table);
+
+        return table;
     }
 
-    error(testName, exc) {
-        this._row(testName, 'FAIL', exc.stack, '#ffaaaa');
-    }
+    renderOneTest(table, testName, statusText, message, hexColor) {
+        let row = domElement(
+            'tr',
+            { backgroundColor: hexColor },
+            null);
 
-    skipped(testName) {
-        this._row(testName, 'SKIPPED', '', '');
-    }
+        let nameElement = domElement(
+            'td',
+            { textAlign: 'left', verticalAlign: 'top' },
+            testName);
+        nameElement.onclick = (evt) => {
+            let newQueryParams = [];
+            let addedRunonly = false;
+            let url = new URL(window.location);
+            for (let pair of url.searchParams.entries()) {
+                let key = pair[0];
+                let value = pair[1];
+                if (key === 'runonly') {
+                    value = testName;
+                    addedRunonly = true;
+                }
+                newQueryParams.push(`${key}=${value}`);
+            };
 
-    _row(testName, statusText, message, hexColor) {
-        this.table.append(mu('tr')
-            .style('backgroundColor', hexColor)
-            .append(mu('td')
-                .style('textAlign', 'left')
-                .style('verticalAlign', 'top')
-                .click(evt => {
-                    m.route.set('/test', {runonly: testName}, {});
-                })
-                .setText(testName))
-            .append(mu('td')
-                .style('textAlign', 'center')
-                .style('verticalAlign', 'top')
-                .setText(statusText))
-            .append(mu('td')
-                .style('textAlign', 'left')
-                .style('verticalAlign', 'top')
-                .style('whiteSpace', 'pre')
-                .setText(message)));
-    }
-}
-
-export function TestInit(endpoint, routes) {
-    routes[endpoint] = {
-        onmatch: function(args, requestedPath, route) {
-            let results = runTests(args.runonly);
-            return {
-                view: function() {
-                    let renderer = new mithrilRenderer();
-                    render(renderer, results);
-                    return [
-                        renderer.table,
-                    ];
-                },
+            if (!addedRunonly) {
+                newQueryParams.push(`runonly=${testName}`);
             }
-        },
-        render: function(vnode) {
-            return [vnode];
-        },
-    };
+
+            let newQuery = `?${newQueryParams.join('&')}`
+            window.location.search = newQuery;
+        };
+        row.append(nameElement);
+
+        let statusElement = domElement(
+            'td',
+            { textAlign: 'center', verticalAlign: 'top' },
+            statusText);
+        row.append(statusElement);
+
+        let messageElement = domElement(
+            'td',
+            { textAlign: 'left', verticalAlign: 'top', whiteSpace: 'pre' },
+            message);
+        row.append(messageElement);
+
+        table.append(row);
+    }
 }
+
 
 class T {
     constructor(testName) {
@@ -139,7 +186,7 @@ export function addTest(testName, testFunc) {
     testCases.push([testName, testFunc]);
 }
 
-export function runTests(testPattern) {
+function runTestsInternal(testPattern) {
     let r = new RegExp(testPattern);
     let results = [];
 
@@ -224,3 +271,15 @@ export let require = {
         t.fail(`expected an exception with message '${errorFragment}', but no exception occurred`);
     }
 };
+
+function domElement(tag, style, innerText) {
+    let element = document.createElement(tag);
+    element.style = style;
+    Object.keys(style).forEach(attr => {
+        element.style[attr] = style[attr];
+    });
+    if (innerText !== null) {
+        element.innerText = innerText;
+    }
+    return element;
+}
