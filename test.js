@@ -214,15 +214,15 @@ function runTestsInternal(testPattern) {
 };
 
 export let require = {
-    true: function(t, value, msg) {
-        if (value === false) {
-            t.fail('true !== false');
+    true: function(t, actual, msg) {
+        if (actual !== true) {
+            t.fail(`true !== ${actual}`);
         }
     },
 
-    false: function(t, value, msg) {
-        if (value === true) {
-            t.fail('false !== true');
+    false: function(t, actual, msg) {
+        if (actual !== false) {
+            t.fail(`false !== ${actual}`);
         }
     },
 
