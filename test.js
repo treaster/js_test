@@ -5,67 +5,234 @@ const FAILED = 'failed';
 const SKIPPED = 'skipped';
 
 // Run tests and render the results using the supplied renderer.
-// If ?run_tests is not defined in the URL and/or is not equal '1', do nothing.
-// If ?runonly=[regexp] is defined, run only tests matching the specified pattern.
-// TODO(treaster): wrap this in an object, parameterize the URL query names,
-// and remove global vars from this file.
-export function runTests(renderer) {
+//
+// Available options are:
+// renderer: object
+//     The renderer used to display the results. By default,
+//     ConsoleRenderer will be used.
+// runTestsParam: string
+//     A URL param to toggle when tests should run.
+//     By default, 'run_tests' is used. If the param is set to '1' in the URL,
+//     tests will be executed and this function will return true. Otherwise,
+//     this function will do nothing and it will return false.
+//     For example: http://example.com?run_tests=1
+// runOnlyParam: string
+//     A URL param to control which specific test cases are run.
+//     By default, 'run_only' is used. The param should be set to a regular
+//     expression pattern. Any test name that has a partial match with the
+//     pattern will be executed. All other tests will be skipped.
+//     If this option is omitted, all tests will be executed.
+//     For example: http://example.com?run_tests=1&run_only=TestMagical.*
+export function runTests(options) {
+    if (!options) {
+        options = {};
+    }
+    if (!options.renderer) {
+        options.renderer = new ConsoleRenderer();
+    }
+    if (!options.runTestsParam) {
+        options.runTestsParam = 'run_tests';
+    }
+    if (!options.runOnlyParam) {
+        options.runOnlyParam = 'run_only';
+    }
+
     let params = new URL(window.location).searchParams;
-    if (params.get('run_tests') !== '1') {
+    if (params.get(options.runTestsParam) !== '1') {
         return false;
     }
 
-    let results = runTestsInternal(params.get('runonly') || '');
-    renderer.render(results);
+    let results = runTestsInternal(params.get(options.runOnlyParam) || '');
+    options.renderer.render(options, results);
     return true;
 }
 
+// addTest() adds a test to the set of tests to run.
+// All tests registered by addTest() will be executed when runTests() is called
+// (excepting the behaviors of the runTestsParam and runOnlyParam options).
+// testName: string, the name of the test case.
+// testFunc: a function that takes one argument. The argument is a TestCase,
+//     defined below. The function body performs the test behavior. Methods
+//     on the TestCase are called to define the outcome of the test.
+export function addTest(testName, testFunc) {
+    testCases.push([testName, testFunc]);
+}
+
+// TestCase is passed to test functions to help verify test behavior.
+// Test execution will stop when fail() is called or when any behavior
+// assertion fails. (all assertions call fail() internally)
+// The TestCase instance is provided to the test function by this testing
+// framework.
+class TestCase {
+    // The constructor is not needed by applications.
+    constructor(testName) {
+        this.name = testName;
+        this.status = 'skipped';
+        this.exc = null;
+    }
+
+    // fail causes a test case to fail, with the specified error message.
+    fail(msg) {
+        throw new Error(msg);
+    }
+
+    // true causes the test to fail if actual not equal to true. Values that
+    // implicitly convert to true, such as 1 or 'abc', are insufficient.
+    // true is the same as equals(true, actual);
+    true(actual) {
+        if (actual !== true) {
+            this.fail(`true !== ${actual}`);
+        }
+    }
+
+    // false causes the test to fail if actual not equal to false. Values that
+    // implicitly convert to false, such as 0 or '', are insufficient.
+    // false is the same as equals(false, actual);
+    false(actual) {
+        if (actual !== false) {
+            this.fail(`false !== ${actual}`);
+        }
+    }
+
+    // equals causes the test to fail if actual is not equal to expected.
+    // For object types, the objects must be exactly the same instance or reference.
+    // Object keys are not traversed for equivalence.
+    equals(expected, actual) {
+        if (expected !== actual) {
+            this.fail(`${expected} !== ${actual}`);
+        }
+    }
+
+    // notEquals causes the test to fail if actual is equal to expected.
+    notEquals(expected, actual) {
+        if (expected === actual) {
+            this.fail(`${expected} === ${actual}`);
+        }
+    }
+
+    // objEquals causes the test to fail if actual is not recursively
+    // equivalent to expected.
+    // Equivalence is determined by converting both actual and expected to JSON,
+    // then verifying that the JSON is identical.
+    objEquals(expected, actual) {
+        let expectedJson = JSON.stringify(expected);
+        let actualJson = JSON.stringify(actual);
+        if (expectedJson !== actualJson) {
+            this.fail(`\n${expectedJson}\n  ===\n${actualJson}\n`);
+        }
+    }
+
+    // objNotEquals causes the test to fail if actual is recursively
+    // equivalent to expected.
+    // Equivalence is determined by converting both actual and expected to JSON,
+    // then verifying that the JSON is identical.
+    objNotEquals(expected, actual) {
+        let expectedJson = JSON.stringify(expected);
+        let actualJson = JSON.stringify(actual);
+        if (expectedJson === actualJson) {
+            this.fail(`\n${expectedJson}\n  !==\n${actualJson}\n`);
+        }
+    }
+
+    // defined fails if actual is undefined or null;
+    defined(actual) {
+        if (actual === undefined) {
+            this.fail('unexpected undefined value. expected defined, not-null value.');
+        }
+        if (actual === null) {
+            this.fail('unexpected null value. expected defined, not-null value.');
+        }
+    }
+
+    // exception fails if failingFunc does not throw an exception when executed,
+    // or if the exception message does not contain the errorFragment string.
+    // This enables a test to verify when a function is expected to fail, and
+    // that when it fails it fails in the expected way.
+    exception(failingFunc, errorFragment) {
+        try {
+            failingFunc();
+        } catch(exc) {
+            if (exc.message.indexOf(errorFragment) === -1) {
+                this.fail(`exception caught, but exception message did not contain expected fragment
+                    expected: ${errorFragment}
+                    received: ${exc.stack}`);
+            }
+            // this is the expected behavior
+            return;
+        }
+
+        this.fail(`expected an exception with message '${errorFragment}', but no exception occurred`);
+    }
+};
+
+
+// Renderer is a base class for displaying unit test results.
+// It does little on its own, but can be subclassed to provide custom rendering
+// behaviors.
+// Subclasses must define:
+// renderBoilerplate(options):
+//     options: the same object received by runTests().
+// renderOneTest(options, table, testName, status, stack, hexColor):
+//     options: the same object received by runTests()
+//     table: the container the test result should be added to
+//     testName: the name of the test that was executed
+//     status: a string status for display. Probably 'OK', 'FAIL', or 'SKIPPED'.
+//     stack: the call stack of a failed test
+//     color: a color associated with the display. Different status codes
+//         correspond to different colors.
 export class Renderer {
     constructor() {
     }
 
-    render(results) {
-        let table = this.renderBoilerplate();
+    render(options, results) {
+        let table = this.renderBoilerplate(options);
         for (let result of results) {
             switch (result.status) {
                 case OK:
-                    this.ok(table, result.name);
+                    this.ok(options, table, result.name);
                     break;
                 case FAILED:
-                    this.error(table, result.name, result.exc);
+                    this.error(options, table, result.name, result.exc);
                     break;
                 case SKIPPED:
-                    this.skipped(table, result.name);
+                    this.skipped(options, table, result.name);
                     break;
             }
         }
     }
 
-    ok(table, testName) {
-        this.renderOneTest(table, testName, 'OK', '', '#00ff00');
+    ok(options, table, testName) {
+        this.renderOneTest(options, table, testName, 'OK', '', '#00ff00');
     }
 
-    error(table, testName, exc) {
-        this.renderOneTest(table, testName, 'FAIL', exc.stack, '#ffaaaa');
+    error(options, table, testName, exc) {
+        // Safari formats stacks differently from Chrome. This at least gets us
+        // partway there.
+        if (!exc.stack.startsWith('Error: ' + exc.message)) {
+            exc.stack = `Error: ${exc.message}\n${exc.stack}`;
+        }
+        this.renderOneTest(options, table, testName, 'FAIL', exc.stack, '#ffaaaa');
     }
 
-    skipped(table, testName) {
-        this.renderOneTest(table, testName, 'SKIPPED', '', '');
+    skipped(options, table, testName) {
+        this.renderOneTest(options, table, testName, 'SKIPPED', '', '');
     }
 
     // subclasses must provide renderBoilerplate() and renderOneTest()
 }
 
+// ConsoleRenderer displays test output to the browser's debug console.
+// See Renderer for details of methods.
 export class ConsoleRenderer extends Renderer {
     constructor() {
         super();
     }
 
-    renderBoilerplate() {
+    renderBoilerplate(options) {
         return null;
     }
 
-    renderOneTest(table, testName, status, stack, hexColor) {
+    renderOneTest(options, table, testName, status, stack, hexColor) {
         let stackMsg = '';
         if (stack !== '') {
             stackMsg = `\n'${stack}`;
@@ -74,20 +241,51 @@ export class ConsoleRenderer extends Renderer {
     }
 };
 
+// ConsoleRenderer displays test elements by creating DOM elements in the web
+// page itself.
+// See Renderer for details of methods.
 export class DomRenderer extends Renderer {
-    constructor(parentElement) {
+    constructor(options) {
         super();
-        this._parentElement = parentElement;
+
+        if (!options) {
+            options = {};
+        }
+        if (!options.containerElement) {
+            options.containerElement = document.body;
+        }
+        if (!options.containerClassName) {
+            options.containerClassName = '';
+        }
+        if (!options.containerStyle) {
+            options.containerStyle = {
+                fontSize: '12px',
+                fontFamily: 'monospace',
+            }
+        }
+
+        this._containerElement = options.containerElement;
+        this._containerClassName = options.containerClassName;
+        this._containerStyle = options.containerStyle;
     }
 
-    renderBoilerplate() {
+    renderBoilerplate(options) {
+        if (this._containerClassName) {
+            this._containerElement.className = this._containerClassName;
+        }
+        if (this._containerStyle) {
+            this._containerElement.style = this._containerStyle;
+        }
+
         let table = domElement(
             'table', 
             {
-                fontFamily: 'monospace',
-                verticalAlign: 'top',
-                borderCollapse: 'collapse',
-                border: '1px solid black',
+                style: {
+                    fontFamily: 'monospace',
+                    verticalAlign: 'top',
+                    borderCollapse: 'collapse',
+                    border: '1px solid black',
+                },
             },
             null);
 
@@ -95,47 +293,53 @@ export class DomRenderer extends Renderer {
 
         let testName = domElement(
             'td', 
-            { width: '10em', textAlign: 'left', },
+            { style: { width: '10em', textAlign: 'left', }, },
             'Test Name');
         headerTr.append(testName);
 
         let outcome = domElement(
             'td',
-            { width: '8em', textAlign: 'center', },
+            { style: { width: '8em', textAlign: 'center', }, },
             'Outcome');
         headerTr.append(outcome);
 
         let message = domElement(
             'td',
-            { width: '20em', textAlign: 'left', },
+            { style: { width: '20em', textAlign: 'left', }, },
             'Message');
         headerTr.append(message);
 
         table.append(headerTr);
 
-        this._parentElement.append(table);
+        this._containerElement.append(table);
 
         return table;
     }
 
-    renderOneTest(table, testName, statusText, message, hexColor) {
+    renderOneTest(options, table, testName, statusText, message, hexColor) {
         let row = domElement(
             'tr',
-            { backgroundColor: hexColor },
+            { style: { backgroundColor: hexColor }, },
             null);
 
         let nameElement = domElement(
             'td',
-            { textAlign: 'left', verticalAlign: 'top' },
+            { style: { textAlign: 'left', verticalAlign: 'top' }, },
+            null);
+
+        let clickElement = domElement(
+            'a',
+            {},
             testName);
-        nameElement.onclick = (evt) => {
+
+        clickElement.onclick = (evt) => {
             let newQueryParams = [];
             let addedRunonly = false;
             let url = new URL(window.location);
             for (let pair of url.searchParams.entries()) {
                 let key = pair[0];
                 let value = pair[1];
-                if (key === 'runonly') {
+                if (key === options.runOnlyParam) {
                     value = testName;
                     addedRunonly = true;
                 }
@@ -143,23 +347,24 @@ export class DomRenderer extends Renderer {
             };
 
             if (!addedRunonly) {
-                newQueryParams.push(`runonly=${testName}`);
+                newQueryParams.push(`${options.runOnlyParam}=${testName}`);
             }
 
             let newQuery = `?${newQueryParams.join('&')}`
             window.location.search = newQuery;
         };
+        nameElement.append(clickElement);
         row.append(nameElement);
 
         let statusElement = domElement(
             'td',
-            { textAlign: 'center', verticalAlign: 'top' },
+            { style: { textAlign: 'center', verticalAlign: 'top' }, },
             statusText);
         row.append(statusElement);
 
         let messageElement = domElement(
             'td',
-            { textAlign: 'left', verticalAlign: 'top', whiteSpace: 'pre' },
+            { style: { textAlign: 'left', verticalAlign: 'top', whiteSpace: 'pre' }, },
             message);
         row.append(messageElement);
 
@@ -168,23 +373,12 @@ export class DomRenderer extends Renderer {
 }
 
 
-class T {
-    constructor(testName) {
-        this.name = testName;
-        this.status = 'skipped';
-        this.exc = null;
-    }
 
-    fail(msg) {
-        throw new Error(msg);
-    }
-};
 
+// testCases is a global object to store tests added by the application.
+// When runTests() is called, all tests in this array are executed.
+// Applications use addTest() to add tests to the set.
 let testCases = [];
-
-export function addTest(testName, testFunc) {
-    testCases.push([testName, testFunc]);
-}
 
 function runTestsInternal(testPattern) {
     let r = new RegExp(testPattern);
@@ -194,7 +388,7 @@ function runTestsInternal(testPattern) {
         let testName = testCase[0];
 
         let testFunc = testCase[1];
-        let t = new T(testName);
+        let t = new TestCase(testName);
         if (!r.test(testName)) {
             t.status = SKIPPED;
         } else {
@@ -213,73 +407,29 @@ function runTestsInternal(testPattern) {
     return results;
 };
 
-export let require = {
-    true: function(t, actual, msg) {
-        if (actual !== true) {
-            t.fail(`true !== ${actual}`);
-        }
-    },
-
-    false: function(t, actual, msg) {
-        if (actual !== false) {
-            t.fail(`false !== ${actual}`);
-        }
-    },
-
-    equals: function(t, expected, actual) {
-        if (expected !== actual) {
-            t.fail(`${expected} !== ${actual}`);
-        }
-    },
-
-    notEquals: function(t, expected, actual) {
-        if (expected === actual) {
-            t.fail(`${expected} === ${actual}`);
-        }
-    },
-
-    objEquals: function(t, expected, actual) {
-        let expectedJson = JSON.stringify(expected);
-        let actualJson = JSON.stringify(actual);
-        if (expectedJson !== actualJson) {
-            t.fail(`${expectedJson} === ${actualJson}`);
-        }
-    },
-
-    defined: function(t, actual) {
-        if (actual === undefined) {
-            t.fail('unexpected undefined value. expected defined, not-null value.');
-        }
-        if (actual === null) {
-            t.fail('unexpected null value. expected defined, not-null value.');
-        }
-    },
-
-    exception: function(t, failingFunc, errorFragment) {
-        try {
-            failingFunc();
-        } catch(exc) {
-            if (exc.message.indexOf(errorFragment) === -1) {
-                t.fail(`exception caught, but exception message did not contain expected fragment
-                    expected: ${errorFragment}
-                    received: ${exc.stack}`);
-            }
-            // this is the expected behavior
-            return;
-        }
-
-        t.fail(`expected an exception with message '${errorFragment}', but no exception occurred`);
-    }
-};
-
-function domElement(tag, style, innerText) {
+function domElement(tag, attrs, innerText) {
     let element = document.createElement(tag);
-    element.style = style;
-    Object.keys(style).forEach(attr => {
-        element.style[attr] = style[attr];
+    Object.keys(attrs).forEach(key => {
+        const val = attrs[key];
+        if (isObject(val)) {
+            element[key] = {}
+            Object.keys(val).forEach(subkey => {
+                element[key][subkey] = val[subkey];
+            });
+        } else {
+            element[key] = attrs[key];
+        }
     });
+
     if (innerText !== null) {
         element.innerText = innerText;
     }
     return element;
+}
+
+function isObject(v) {
+    return (
+        typeof v === 'object' &&
+        !Array.isArray(v) &&
+        v !== null);
 }
