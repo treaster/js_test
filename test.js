@@ -1,28 +1,48 @@
 "use strict"
 
-const OK = 'ok';
-const FAILED = 'failed';
-const SKIPPED = 'skipped';
+/**
+ * A lightweight Javascript unit test framework with no dependencies.
+ *
+ * test.js is a lightweight unit test framework intended to be used for JS
+ * applications that don't want to pull in the weight of nodejs, npm, etc.
+ * This file has no other dependencies. It is intended to be used as a JS
+ * module.
+ *
+ * To use:
+ * 1. Copy this file near your other Javascript files.
+ * 2. Use `import { addTest, runTests } from './test.js';` to an existing JS
+ *    file.
+ * 3. Define unit tests in or near the application code with addTest().
+ * 4. Visit http://[your url]?run_tests=1 to execute the tests and see the
+ *    results. Default behaviors are provided for easy setup, but they can be
+ *    overridden.
+ *
+ * @author Mike Treaster
+ */
 
-// Run tests and render the results using the supplied renderer.
-//
-// Available options are:
-// renderer: object
-//     The renderer used to display the results. By default,
-//     ConsoleRenderer will be used.
-// runTestsParam: string
-//     A URL param to toggle when tests should run.
-//     By default, 'run_tests' is used. If the param is set to '1' in the URL,
-//     tests will be executed and this function will return true. Otherwise,
-//     this function will do nothing and it will return false.
-//     For example: http://example.com?run_tests=1
-// runOnlyParam: string
-//     A URL param to control which specific test cases are run.
-//     By default, 'run_only' is used. The param should be set to a regular
-//     expression pattern. Any test name that has a partial match with the
-//     pattern will be executed. All other tests will be skipped.
-//     If this option is omitted, all tests will be executed.
-//     For example: http://example.com?run_tests=1&run_only=TestMagical.*
+
+/**
+ * Run tests and render the results using the supplied renderer. runTests()
+ * will examine the page URL to decide whether to run tests at all. This allows
+ * the setup code in the application to be less intrusive, since runTests() can
+ * be run blindly.
+ *
+ * @param {object} - options to configure the behavior of the test framework
+ * @param {object} options.renderer -  The renderer used to display the results. By default, ConsoleRenderer will be used.
+ * @param {string} options.runTestsParam - A URL param to toggle when tests should
+ * run. By default, 'options.run_tests' is used. If the param is set to '1' in the URL,
+ * tests will be executed and this function will return true. Otherwise,
+ * this function will do nothing and it will return false.
+ * For example: http: *example.com?run_tests=1
+ * @param {string} options.runOnlyParam - A URL param to control which specific
+ * test cases are run. By default, 'run_only' is used. The param should be set
+ * to a regular expression pattern. Any test name that has a partial match with
+ * the pattern will be executed. All other tests will be skipped.
+ * If this option is omitted, all tests will be executed.
+ * For example: http: *example.com?run_tests=1&run_only=TestMagical.*
+ *
+ * @returns {boolean} true if tests are executed, false if tests are skipped
+ */
 export function runTests(options) {
     if (!options) {
         options = {};
@@ -47,73 +67,107 @@ export function runTests(options) {
     return true;
 }
 
-// addTest() adds a test to the set of tests to run.
-// All tests registered by addTest() will be executed when runTests() is called
-// (excepting the behaviors of the runTestsParam and runOnlyParam options).
-// testName: string, the name of the test case.
-// testFunc: a function that takes one argument. The argument is a TestCase,
-//     defined below. The function body performs the test behavior. Methods
-//     on the TestCase are called to define the outcome of the test.
-export function addTest(testName, testFunc) {
-    testCases.push([testName, testFunc]);
+/**
+ * @callback testFn - a function that executes a test behavior.
+ * @param {TestCase} testCase - Methods on the TestCase should be called in
+ * the function body to define the outcome of the test.
+ */
+
+/**
+ * Adds a test to the set of tests to run.
+ * All tests registered by addTest() will be executed when runTests() is called
+ * (excepting the behaviors of the runTestsParam and runOnlyParam options).
+ * 
+ * @param {string} testName - string, the name of the test case.
+ * @param {testFn} testFn - Defines a test behavior, and executes that behavior
+ * when called.
+ */
+export function addTest(testName, testFn) {
+    testCases.push([testName, testFn]);
 }
 
-// TestCase is passed to test functions to help verify test behavior.
-// Test execution will stop when fail() is called or when any behavior
-// assertion fails. (all assertions call fail() internally)
-// The TestCase instance is provided to the test function by this testing
-// framework.
+/**
+ * Passed to test functions to help verify test behavior.
+ * Test execution will stop when fail() is called or when any behavior
+ * assertion fails. (all assertions call fail() internally)
+ * The TestCase instance is provided to the test function by this testing
+ * framework.
+ * @class
+ */
 class TestCase {
-    // The constructor is not needed by applications.
+    /**
+     * The constructor is not needed by applications.
+     */
     constructor(testName) {
         this.name = testName;
         this.status = 'skipped';
         this.exc = null;
     }
 
-    // fail causes a test case to fail, with the specified error message.
+    /**
+     * Causes a test case to fail, with the specified error message.
+     * @param {string} msg - the message to display in the test results
+     */
     fail(msg) {
         throw new Error(msg);
     }
 
-    // true causes the test to fail if actual not equal to true. Values that
-    // implicitly convert to true, such as 1 or 'abc', are insufficient.
-    // true is the same as equals(true, actual);
+    /**
+     * Causes the test to fail if actual not equal to true. Values that
+     * implicitly convert to true, such as 1 or 'abc', are insufficient.
+     * true is the same as equals(true, actual);
+     * @param {*} actual - the value to compare to true
+     */
     true(actual) {
         if (actual !== true) {
             this.fail(`true !== ${actual}`);
         }
     }
 
-    // false causes the test to fail if actual not equal to false. Values that
-    // implicitly convert to false, such as 0 or '', are insufficient.
-    // false is the same as equals(false, actual);
+    /**
+     * Causes the test to fail if actual not equal to false. Values that
+     * implicitly convert to false, such as 0 or '', are insufficient.
+     * false is the same as equals(false, actual);
+     * @param {*} actual - the value to compare to false
+     */
     false(actual) {
         if (actual !== false) {
             this.fail(`false !== ${actual}`);
         }
     }
 
-    // equals causes the test to fail if actual is not equal to expected.
-    // For object types, the objects must be exactly the same instance or reference.
-    // Object keys are not traversed for equivalence.
+    /**
+     * Causes the test to fail if actual is not equal to expected.
+     * For object types, the objects must be exactly the same instance or reference.
+     * Object keys are not traversed for equivalence.
+     * @param {*} expected - the expected value, defined by the test code
+     * @param {*} actual - the actual value produced by running the tested code
+     */
     equals(expected, actual) {
         if (expected !== actual) {
             this.fail(`${expected} !== ${actual}`);
         }
     }
 
-    // notEquals causes the test to fail if actual is equal to expected.
+    /**
+     * Causes the test to fail if actual is equal to expected.
+     * @param {*} expected - the expected value, defined by the test code
+     * @param {*} actual - the actual value produced by running the tested code
+     */
     notEquals(expected, actual) {
         if (expected === actual) {
             this.fail(`${expected} === ${actual}`);
         }
     }
 
-    // objEquals causes the test to fail if actual is not recursively
-    // equivalent to expected.
-    // Equivalence is determined by converting both actual and expected to JSON,
-    // then verifying that the JSON is identical.
+    /**
+     * Causes the test to fail if actual is not recursively
+     * equivalent to expected.
+     * Equivalence is determined by converting both actual and expected to JSON,
+     * then verifying that the JSON is identical.
+     * @param {*} expected - the expected value, defined by the test code
+     * @param {*} actual - the actual value produced by running the tested code
+     */
     objEquals(expected, actual) {
         let expectedJson = JSON.stringify(expected);
         let actualJson = JSON.stringify(actual);
@@ -122,10 +176,14 @@ class TestCase {
         }
     }
 
-    // objNotEquals causes the test to fail if actual is recursively
-    // equivalent to expected.
-    // Equivalence is determined by converting both actual and expected to JSON,
-    // then verifying that the JSON is identical.
+    /**
+     * Causes the test to fail if actual is recursively
+     * equivalent to expected.
+     * Equivalence is determined by converting both actual and expected to JSON,
+     * then verifying that the JSON is identical.
+     * @param {*} expected - the expected value, defined by the test code
+     * @param {*} actual - the actual value produced by running the tested code
+     */
     objNotEquals(expected, actual) {
         let expectedJson = JSON.stringify(expected);
         let actualJson = JSON.stringify(actual);
@@ -134,7 +192,10 @@ class TestCase {
         }
     }
 
-    // defined fails if actual is undefined or null;
+    /**
+     * Causes the test to fail if actual is undefined or null;
+     * @param {*} actual - the actual value produced by running the tested code
+     */
     defined(actual) {
         if (actual === undefined) {
             this.fail('unexpected undefined value. expected defined, not-null value.');
@@ -144,13 +205,24 @@ class TestCase {
         }
     }
 
-    // exception fails if failingFunc does not throw an exception when executed,
-    // or if the exception message does not contain the errorFragment string.
-    // This enables a test to verify when a function is expected to fail, and
-    // that when it fails it fails in the expected way.
-    exception(failingFunc, errorFragment) {
+    /**
+     * @callback exceptionFn - A function to test for that it will throw an exception.
+     */
+
+    /**
+     * Causes the test to fail if failingFunc does not throw an exception when
+     * executed, or if the exception message does not contain the errorFragment
+     * string.
+     * This enables a test to verify when a function is expected to fail, and
+     * that when it fails it fails in the expected way.
+     * @param {exceptionFn} failingFn - The function to test for failure. This
+     * will be executed automatically by exception(), and passed no arguments.
+     * @param {errorFragment} string - an expected fragment of the exception error
+     * message.
+     */
+    exception(failingFn, errorFragment) {
         try {
-            failingFunc();
+            failingFn();
         } catch(exc) {
             if (exc.message.indexOf(errorFragment) === -1) {
                 this.fail(`exception caught, but exception message did not contain expected fragment
@@ -166,20 +238,26 @@ class TestCase {
 };
 
 
-// Renderer is a base class for displaying unit test results.
-// It does little on its own, but can be subclassed to provide custom rendering
-// behaviors.
-// Subclasses must define:
-// renderBoilerplate(options):
-//     options: the same object received by runTests().
-// renderOneTest(options, table, testName, status, stack, hexColor):
-//     options: the same object received by runTests()
-//     table: the container the test result should be added to
-//     testName: the name of the test that was executed
-//     status: a string status for display. Probably 'OK', 'FAIL', or 'SKIPPED'.
-//     stack: the call stack of a failed test
-//     color: a color associated with the display. Different status codes
-//         correspond to different colors.
+const OK = 'ok';
+const FAILED = 'failed';
+const SKIPPED = 'skipped';
+
+/**
+ * A base class for displaying unit test results.
+ * It does little on its own, but can be subclassed to provide custom rendering
+ * behaviors.
+ * Subclasses must define:
+ * renderBoilerplate(options):
+ *     options: the same object received by runTests().
+ * renderOneTest(options, table, testName, status, stack, hexColor):
+ *     options: the same object received by runTests()
+ *     table: the container the test result should be added to
+ *     testName: the name of the test that was executed
+ *     status: a string status for display. Probably 'OK', 'FAIL', or 'SKIPPED'.
+ *     stack: the call stack of a failed test
+ *     color: a color associated with the display. Different status codes
+ *         correspond to different colors.
+ */
 export class Renderer {
     constructor() {
     }
@@ -221,8 +299,10 @@ export class Renderer {
     // subclasses must provide renderBoilerplate() and renderOneTest()
 }
 
-// ConsoleRenderer displays test output to the browser's debug console.
-// See Renderer for details of methods.
+/**
+ * ConsoleRenderer displays test output to the browser's debug console.
+ * See Renderer for details of methods.
+ */
 export class ConsoleRenderer extends Renderer {
     constructor() {
         super();
@@ -241,9 +321,11 @@ export class ConsoleRenderer extends Renderer {
     }
 };
 
-// ConsoleRenderer displays test elements by creating DOM elements in the web
-// page itself.
-// See Renderer for details of methods.
+/**
+ * ConsoleRenderer displays test elements by creating DOM elements in the web
+ * page itself.
+ * See Renderer for details of methods.
+ */
 export class DomRenderer extends Renderer {
     constructor(options) {
         super();
@@ -378,7 +460,9 @@ export class DomRenderer extends Renderer {
 // testCases is a global object to store tests added by the application.
 // When runTests() is called, all tests in this array are executed.
 // Applications use addTest() to add tests to the set.
-let testCases = [];
+// This is an implementation detail, and users should not attempt to
+// modify this.
+const testCases = [];
 
 function runTestsInternal(testPattern) {
     let r = new RegExp(testPattern);
