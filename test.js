@@ -57,12 +57,17 @@ export function runTests(options) {
         options.runOnlyParam = 'run_only';
     }
 
-    let params = new URL(window.location).searchParams;
-    if (params.get(options.runTestsParam) !== '1') {
-        return false;
+    let params = new Map();
+    if (typeof URL !== 'undefined') {
+        params = new URL(window.location).searchParams;
+        if (params.get(options.runTestsParam) !== '1') {
+            return false;
+        }
     }
 
-    let results = runTestsInternal(params.get(options.runOnlyParam) || '');
+    let testPattern = params.get(options.runOnlyParam) || '';
+
+    let results = runTestsInternal(testPattern);
     options.renderer.render(options, results);
     return true;
 }
@@ -77,7 +82,7 @@ export function runTests(options) {
  * Adds a test to the set of tests to run.
  * All tests registered by addTest() will be executed when runTests() is called
  * (excepting the behaviors of the runTestsParam and runOnlyParam options).
- * 
+ *
  * @param {string} testName - string, the name of the test case.
  * @param {testFn} testFn - Defines a test behavior, and executes that behavior
  * when called.
@@ -297,6 +302,8 @@ export class Renderer {
     }
 
     // subclasses must provide renderBoilerplate() and renderOneTest()
+    renderBoilerplate(options) { return null; }
+    renderOneTest(options, table, testName, statusText, message, hexColor) {}
 }
 
 /**
@@ -317,7 +324,7 @@ export class ConsoleRenderer extends Renderer {
         if (stack !== '') {
             stackMsg = `\n'${stack}`;
         }
-        console.log(`Test "${testName}": ${status}${stackMsg}`);
+        console.log(`${status} - ${testName}${stackMsg}`);
     }
 };
 
@@ -360,7 +367,7 @@ export class DomRenderer extends Renderer {
         }
 
         let table = domElement(
-            'table', 
+            'table',
             {
                 style: {
                     fontFamily: 'monospace',
@@ -374,7 +381,7 @@ export class DomRenderer extends Renderer {
         let headerTr = domElement('tr', {}, null);
 
         let testName = domElement(
-            'td', 
+            'td',
             { style: { width: '10em', textAlign: 'left', }, },
             'Test Name');
         headerTr.append(testName);
@@ -417,7 +424,7 @@ export class DomRenderer extends Renderer {
         clickElement.onclick = (evt) => {
             let newQueryParams = [];
             let addedRunonly = false;
-            let url = new URL(window.location);
+            let url = new URL(window.location.toString());
             for (let pair of url.searchParams.entries()) {
                 let key = pair[0];
                 let value = pair[1];
