@@ -174,6 +174,18 @@ class TestCase {
      * @param {*} actual - the actual value produced by running the tested code
      */
     objEquals(expected, actual) {
+        if (expected instanceof Set) {
+            this.fail("objEquals doesn't work with JS Sets or Maps. Use setEquals() or mapEquals() instead. (expected is a Set)");
+        }
+        if (actual instanceof Set) {
+            this.fail("objEquals doesn't work with JS Sets or Maps. Use setEquals() or mapEquals() instead. (actual is a Set)");
+        }
+        if (expected instanceof Map) {
+            this.fail("objEquals doesn't work with JS Sets or Maps. Use setEquals() or mapEquals() instead. (expected is a Map)");
+        }
+        if (actual instanceof Map) {
+            this.fail("objEquals doesn't work with JS Sets or Maps. Use setEquals() or mapEquals() instead. (actual is a Map)");
+        }
         let expectedJson = JSON.stringify(expected);
         let actualJson = JSON.stringify(actual);
         if (expectedJson !== actualJson) {
@@ -194,6 +206,35 @@ class TestCase {
         let actualJson = JSON.stringify(actual);
         if (expectedJson === actualJson) {
             this.fail(`\n${expectedJson}\n  !==\n${actualJson}\n`);
+        }
+    }
+
+    /**
+     * Causes the test to fail if actual set and expected set contain different items.
+     * Equivalence is determined by Set.has().
+     * @param {*} expected - the expected set, defined by the test code
+     * @param {*} actual - the actual set produced by running the tested code
+     */
+    setEquals(expected, actual) {
+        if (!(expected instanceof Set)) {
+            this.fail("setEquals() works only with JS Sets. (expected is not a Set)");
+        }
+        if (!(actual instanceof Set)) {
+            this.fail("setEquals() works only with JS Sets. (actual is not a Set)");
+        }
+        for (const item of expected) {
+            if (!actual.has(item)) {
+                const expectedStr = JSON.stringify(Array.from(expected));
+                const actualStr = JSON.stringify(Array.from(actual));
+                this.fail(`Missing ${JSON.stringify(item)} from actual.\n  expected: ${expectedStr}\n  actual:   ${actualStr}`);
+            }
+        }
+        for (const item of actual) {
+            if (!expected.has(item)) {
+                const expectedStr = JSON.stringify(Array.from(expected));
+                const actualStr = JSON.stringify(Array.from(actual));
+                this.fail(`Actual has extra item ${JSON.stringify(item)} not found in expected.\n  expected: ${expectedStr}\n  actual:   ${actualStr}`);
+            }
         }
     }
 
