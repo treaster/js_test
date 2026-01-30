@@ -272,8 +272,8 @@ class TestCase {
         } catch(exc) {
             if (exc.message.indexOf(errorFragment) === -1) {
                 this.fail(`exception caught, but exception message did not contain expected fragment
-                    expected: ${errorFragment}
-                    received: ${exc.stack}`);
+                    expected: '${errorFragment}'
+                    received: '${exc.message}'`);
             }
             // this is the expected behavior
             return;
