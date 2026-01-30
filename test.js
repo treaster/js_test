@@ -51,14 +51,18 @@ export function runTests(options) {
         options.renderer = new ConsoleRenderer();
     }
     if (!options.runTestsParam) {
+        // Set the default *name* for the "?run_tests=foo" URL param.
+        // Use options object to override.
         options.runTestsParam = 'run_tests';
     }
     if (!options.runOnlyParam) {
+        // Set the default *name* for the "?run_only=foo" URL param.
+        // Use options object to override.
         options.runOnlyParam = 'run_only';
     }
 
     let params = new Map();
-    if (typeof URL !== 'undefined') {
+    if (typeof URL !== 'undefined' && typeof window !== 'undefined') {
         params = new URL(window.location).searchParams;
         if (params.get(options.runTestsParam) !== '1') {
             return false;
