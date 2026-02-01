@@ -103,7 +103,7 @@ export function addTest(testName, testFn) {
  * framework.
  * @class
  */
-class TestCase {
+export class TestCase {
     /**
      * The constructor is not needed by applications.
      */
